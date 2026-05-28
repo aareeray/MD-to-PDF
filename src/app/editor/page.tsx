@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   FileText,
   Download,
   Settings2,
-  PanelLeftClose,
   PanelLeftOpen,
   Eye,
   Code2,
@@ -16,6 +15,9 @@ import {
   Keyboard,
   Copy,
   Check,
+  Wand2,
+  Brain,
+  BookOpen,
 } from "lucide-react";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { MarkdownPreview } from "@/components/preview/MarkdownPreview";
@@ -23,6 +25,8 @@ import { ExportPanel } from "@/components/pdf/ExportPanel";
 import { FontPanel } from "@/components/ui/FontPanel";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { KeyboardShortcutsModal } from "@/components/ui/KeyboardShortcutsModal";
+import { WritingToolsPanel } from "@/components/ui/WritingToolsPanel";
+import { DocumentIntelligenceBanner } from "@/components/ui/DocumentIntelligenceBanner";
 import {
   EditorState,
   FontSettings,
@@ -37,6 +41,7 @@ import {
   defaultExportSettings,
 } from "@/lib/editorStore";
 import { sampleMarkdown } from "@/lib/sampleMarkdown";
+import { analyzeDocument, DocumentAnalysis } from "@/lib/documentIntelligence";
 import Link from "next/link";
 
 type ViewMode = "split" | "editor" | "preview";
@@ -53,11 +58,15 @@ export default function EditorPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showFontPanel, setShowFontPanel] = useState(false);
+  const [showWritingTools, setShowWritingTools] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isZenMode, setIsZenMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [documentAnalysis, setDocumentAnalysis] = useState<DocumentAnalysis | null>(null);
+  const [showIntelligenceBanner, setShowIntelligenceBanner] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load state from localStorage
   useEffect(() => {
@@ -81,6 +90,21 @@ export default function EditorPage() {
     }, 1000);
     return () => clearTimeout(timer);
   }, [editorState]);
+
+  // Document Intelligence: analyze content when it changes
+  useEffect(() => {
+    if (analysisTimeoutRef.current) {
+      clearTimeout(analysisTimeoutRef.current);
+    }
+    analysisTimeoutRef.current = setTimeout(() => {
+      const analysis = analyzeDocument(editorState.content);
+      setDocumentAnalysis(analysis);
+      setShowIntelligenceBanner(true);
+    }, 2000);
+    return () => {
+      if (analysisTimeoutRef.current) clearTimeout(analysisTimeoutRef.current);
+    };
+  }, [editorState.content]);
 
   // Save font/export settings
   useEffect(() => {
@@ -120,6 +144,7 @@ export default function EditorPage() {
         setIsZenMode(false);
         setShowExportPanel(false);
         setShowFontPanel(false);
+        setShowWritingTools(false);
         setShowShortcuts(false);
       }
     };
@@ -133,7 +158,7 @@ export default function EditorPage() {
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.name.endsWith(".md")) {
+    if (file && (file.name.endsWith(".md") || file.name.endsWith(".markdown") || file.name.endsWith(".txt"))) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const content = ev.target?.result as string;
@@ -181,6 +206,13 @@ export default function EditorPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [editorState.content]);
+
+  const handleApplyIntelligence = useCallback(() => {
+    if (documentAnalysis) {
+      setExportSettings((prev) => ({ ...prev, theme: documentAnalysis.suggestedTheme }));
+      setFontSettings(documentAnalysis.suggestedFonts);
+    }
+  }, [documentAnalysis]);
 
   return (
     <div
@@ -293,7 +325,19 @@ export default function EditorPage() {
             </button>
 
             <button
-              onClick={() => setShowFontPanel(!showFontPanel)}
+              onClick={() => { setShowWritingTools(!showWritingTools); setShowFontPanel(false); setShowExportPanel(false); }}
+              className={`p-2 rounded-lg transition-premium ${
+                showWritingTools
+                  ? "bg-violet-500 text-white"
+                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
+              }`}
+              title="Writing tools"
+            >
+              <Wand2 size={16} />
+            </button>
+
+            <button
+              onClick={() => { setShowFontPanel(!showFontPanel); setShowWritingTools(false); setShowExportPanel(false); }}
               className={`p-2 rounded-lg transition-premium ${
                 showFontPanel
                   ? "bg-[var(--primary)] text-white"
@@ -306,7 +350,7 @@ export default function EditorPage() {
 
             <button
               onClick={() => setIsZenMode(true)}
-              className="p-2 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-premium"
+              className="p-2 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-premium hidden sm:block"
               title="Zen mode (Ctrl+Shift+F)"
             >
               <Maximize2 size={16} />
@@ -314,7 +358,7 @@ export default function EditorPage() {
 
             <button
               onClick={() => setShowShortcuts(true)}
-              className="p-2 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-premium"
+              className="p-2 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-premium hidden sm:block"
               title="Keyboard shortcuts"
             >
               <Keyboard size={16} />
@@ -325,14 +369,23 @@ export default function EditorPage() {
             <div className="h-6 w-px bg-[var(--border)] mx-1" />
 
             <button
-              onClick={() => setShowExportPanel(!showExportPanel)}
+              onClick={() => { setShowExportPanel(!showExportPanel); setShowFontPanel(false); setShowWritingTools(false); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 text-white text-sm font-semibold shadow-lg hover:shadow-blue-500/25 transition-premium hover:scale-105 active:scale-95"
             >
               <Download size={14} />
-              <span className="hidden sm:inline">Export PDF</span>
+              <span className="hidden sm:inline">Export</span>
             </button>
           </div>
         </div>
+      )}
+
+      {/* Document Intelligence Banner */}
+      {!isZenMode && showIntelligenceBanner && documentAnalysis && (
+        <DocumentIntelligenceBanner
+          analysis={documentAnalysis}
+          onApplySuggestion={handleApplyIntelligence}
+          onDismiss={() => setShowIntelligenceBanner(false)}
+        />
       )}
 
       {/* Zen mode exit button */}
@@ -361,6 +414,12 @@ export default function EditorPage() {
                 <span className="text-xs text-[var(--muted-foreground)] font-medium">
                   Markdown
                 </span>
+                {documentAnalysis && documentAnalysis.confidence > 0.3 && (
+                  <span className="ml-auto flex items-center gap-1 text-[10px] text-violet-400">
+                    <Brain size={10} />
+                    {documentAnalysis.type}
+                  </span>
+                )}
               </div>
             )}
             <div className="flex-1 overflow-hidden">
@@ -385,6 +444,11 @@ export default function EditorPage() {
                 <span className="text-xs text-[var(--muted-foreground)] font-medium">
                   Preview
                 </span>
+                {documentAnalysis && documentAnalysis.features.length > 0 && (
+                  <span className="ml-auto text-[10px] text-[var(--muted-foreground)]">
+                    {documentAnalysis.features.slice(0, 3).join(" · ")}
+                  </span>
+                )}
               </div>
             )}
             <div className="flex-1 overflow-y-auto bg-[var(--card)]">
@@ -397,7 +461,7 @@ export default function EditorPage() {
           </div>
         )}
 
-        {/* Font settings panel */}
+        {/* Panels */}
         {showFontPanel && (
           <FontPanel
             fontSettings={fontSettings}
@@ -406,7 +470,14 @@ export default function EditorPage() {
           />
         )}
 
-        {/* Export panel */}
+        {showWritingTools && (
+          <WritingToolsPanel
+            content={editorState.content}
+            onContentChange={handleContentChange}
+            onClose={() => setShowWritingTools(false)}
+          />
+        )}
+
         {showExportPanel && (
           <ExportPanel
             content={editorState.content}
