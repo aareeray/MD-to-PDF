@@ -1,9 +1,18 @@
 import { ExportSettings, FontSettings } from "./editorStore";
+import { generateTypographyCSS, TypographySettings, defaultTypographySettings } from "./typographyEngine";
+import { generatePrintLayoutCSS, PrintLayoutSettings, defaultPrintLayoutSettings, processImageCaptions } from "./printLayoutEngine";
+import { processBlocks, getBlockExportCSS } from "./blockSystem";
+import { generateCoverHTML, CoverSettings, defaultCoverSettings } from "./coverGenerator";
+import { extendedThemeStyles } from "./themes";
 
 export interface PDFExportOptions {
   content: string;
   fontSettings: FontSettings;
   exportSettings: ExportSettings;
+  typographySettings?: TypographySettings;
+  printLayoutSettings?: PrintLayoutSettings;
+  coverSettings?: CoverSettings;
+  onProgress?: (progress: number) => void;
 }
 
 // Theme CSS for different export styles
@@ -116,6 +125,7 @@ const themeStyles: Record<string, string> = {
     a { color: #00bfff; text-shadow: 0 0 5px rgba(0,191,255,0.3); }
     hr { border: none; border-top: 1px solid #1a1a4e; margin: 2rem 0; }
   `,
+  ...extendedThemeStyles,
 };
 
 export function getThemeCSS(themeName: string): string {
@@ -136,10 +146,22 @@ export function getPageDimensions(settings: ExportSettings) {
 }
 
 export async function exportToPDF(options: PDFExportOptions): Promise<void> {
-  const { content, fontSettings, exportSettings } = options;
+  const {
+    content,
+    fontSettings,
+    exportSettings,
+    typographySettings = defaultTypographySettings,
+    printLayoutSettings = defaultPrintLayoutSettings,
+    coverSettings = defaultCoverSettings,
+    onProgress,
+  } = options;
+
+  onProgress?.(5);
 
   // Dynamically import html2pdf.js (browser-only)
   const html2pdf = (await import("html2pdf.js")).default;
+
+  onProgress?.(10);
 
   // Create a temporary container for rendering
   const container = document.createElement("div");
@@ -149,28 +171,50 @@ export async function exportToPDF(options: PDFExportOptions): Promise<void> {
   container.style.width = exportSettings.orientation === "landscape" ? "279mm" : "210mm";
   document.body.appendChild(container);
 
+  onProgress?.(15);
+
   // Import and render markdown
   const { marked } = await import("marked");
   
-  // Configure marked
   marked.setOptions({
     gfm: true,
     breaks: false,
   });
 
-  const htmlContent = await marked.parse(content);
+  // Process custom blocks in content
+  const processedContent = processBlocks(content);
+  
+  onProgress?.(25);
+
+  let htmlContent = await marked.parse(processedContent);
+  
+  // Process image captions
+  htmlContent = processImageCaptions(htmlContent);
+
+  onProgress?.(40);
+
   const themeCSS = getThemeCSS(exportSettings.theme);
+  const typographyCSS = generateTypographyCSS(typographySettings);
+  const printLayoutCSS = generatePrintLayoutCSS(printLayoutSettings);
+  const blockCSS = getBlockExportCSS();
   const isDarkTheme = exportSettings.theme === "dark-cyberpunk";
 
+  // Generate cover page
+  const coverHTML = generateCoverHTML(coverSettings);
+
+  onProgress?.(55);
+
   const fullHTML = `
-    <div id="pdf-content" style="
-      padding: ${exportSettings.margins.top}px ${exportSettings.margins.right}px ${exportSettings.margins.bottom}px ${exportSettings.margins.left}px;
+    <div id="pdf-content" class="pdf-content" style="
       ${isDarkTheme ? 'background: #0a0a1a;' : 'background: white;'}
     ">
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ${themeCSS}
-        body, #pdf-content { 
+        ${typographyCSS}
+        ${printLayoutCSS}
+        ${blockCSS}
+        body, #pdf-content, .pdf-content { 
           font-family: '${fontSettings.bodyFont}', -apple-system, sans-serif;
         }
         h1, h2, h3, h4, h5, h6 {
@@ -179,28 +223,60 @@ export async function exportToPDF(options: PDFExportOptions): Promise<void> {
         code, pre {
           font-family: '${fontSettings.codeFont}', 'Courier New', monospace;
         }
+        .pdf-content > *:not(.cover-page) {
+          padding-left: ${exportSettings.margins.left}px;
+          padding-right: ${exportSettings.margins.right}px;
+        }
+        .pdf-content {
+          padding-top: ${exportSettings.margins.top}px;
+          padding-bottom: ${exportSettings.margins.bottom}px;
+        }
+        /* Developer features: code block with filename */
+        .code-block-container {
+          margin: 1.25rem 0;
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid ${isDarkTheme ? '#1a1a4e' : '#e5e7eb'};
+        }
+        .code-block-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.5rem 1rem;
+          background: ${isDarkTheme ? '#1a1a3e' : '#f1f5f9'};
+          border-bottom: 1px solid ${isDarkTheme ? '#1a1a4e' : '#e5e7eb'};
+          font-size: 0.75rem;
+          color: ${isDarkTheme ? '#94a3b8' : '#64748b'};
+          font-family: '${fontSettings.codeFont}', monospace;
+        }
         ${exportSettings.showWatermark ? `
-          #pdf-content::before {
+          .pdf-content::after {
             content: '${exportSettings.watermarkText}';
             position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 6rem;
-            color: rgba(0,0,0,0.03);
+            font-size: 5rem;
+            color: ${isDarkTheme ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'};
             font-weight: bold;
             pointer-events: none;
             z-index: 1000;
+            white-space: nowrap;
           }
         ` : ''}
       </style>
-      ${exportSettings.showHeader ? `<div style="text-align: center; font-size: 0.75rem; color: #999; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee;">${exportSettings.headerText || exportSettings.title || ''}</div>` : ''}
-      ${htmlContent}
-      ${exportSettings.showFooter ? `<div style="text-align: center; font-size: 0.75rem; color: #999; margin-top: 2rem; padding-top: 0.5rem; border-top: 1px solid #eee;">${exportSettings.footerText || ''}</div>` : ''}
+      ${coverHTML ? `<div class="cover-page">${coverHTML}</div>` : ''}
+      <div class="document-body" style="padding: ${exportSettings.margins.top}px ${exportSettings.margins.right}px ${exportSettings.margins.bottom}px ${exportSettings.margins.left}px;">
+        ${exportSettings.showHeader ? `<div style="text-align: center; font-size: 0.75rem; color: #999; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid ${isDarkTheme ? '#1a1a4e' : '#eee'};">${exportSettings.headerText || exportSettings.title || ''}</div>` : ''}
+        ${htmlContent}
+        ${exportSettings.showFooter ? `<div style="text-align: center; font-size: 0.75rem; color: #999; margin-top: 2.5rem; padding-top: 0.5rem; border-top: 1px solid ${isDarkTheme ? '#1a1a4e' : '#eee'};">${exportSettings.footerText || ''}</div>` : ''}
+      </div>
     </div>
   `;
 
   container.innerHTML = fullHTML;
+
+  onProgress?.(70);
 
   const dimensions = getPageDimensions(exportSettings);
   const filename = exportSettings.title
@@ -222,12 +298,48 @@ export async function exportToPDF(options: PDFExportOptions): Promise<void> {
       format: [dimensions.width, dimensions.height] as [number, number],
       orientation: exportSettings.orientation,
     },
-    pagebreak: { mode: ["avoid-all", "css", "legacy"] as const },
+    pagebreak: { mode: ["avoid-all", "css", "legacy"] as string[] },
   };
+
+  onProgress?.(80);
 
   try {
     await html2pdf().set(opt).from(container).save();
+    onProgress?.(100);
   } finally {
     document.body.removeChild(container);
   }
+}
+
+/**
+ * Export to HTML format
+ */
+export async function exportToHTML(options: Omit<PDFExportOptions, "onProgress">): Promise<string> {
+  const { content, fontSettings, exportSettings } = options;
+  const { marked } = await import("marked");
+  marked.setOptions({ gfm: true, breaks: false });
+
+  const processedContent = processBlocks(content);
+  const htmlContent = await marked.parse(processedContent);
+  const themeCSS = getThemeCSS(exportSettings.theme);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${exportSettings.title || "Document"}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { max-width: 800px; margin: 0 auto; padding: 2rem; }
+    ${themeCSS}
+    body { font-family: '${fontSettings.bodyFont}', -apple-system, sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: '${fontSettings.headingFont}', -apple-system, sans-serif; }
+    code, pre { font-family: '${fontSettings.codeFont}', monospace; }
+  </style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>`;
 }
