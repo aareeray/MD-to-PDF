@@ -352,3 +352,137 @@ body {
   margin: 1.5rem 0;
   overflow-x: auto;
 }
+
+
+/* ===== Animated Markdown Blocks ===== */
+/* Code blocks glow on hover */
+.markdown-preview pre {
+  transition: box-shadow 0.4s ease, transform 0.3s ease;
+}
+
+.markdown-preview pre:hover {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.1), 0 8px 32px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.dark .markdown-preview pre:hover {
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.15), 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Blockquotes animate border */
+.markdown-preview blockquote {
+  transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease;
+}
+
+.markdown-preview blockquote:hover {
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Headings subtle entrance */
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  animation: headingFadeIn 0.5s ease-out;
+}
+
+@keyframes headingFadeIn {
+  from { opacity: 0.7; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Tables have subtle hover effect */
+.markdown-preview tr {
+  transition: background 0.2s ease;
+}
+
+.markdown-preview tr:hover td {
+  background: var(--muted);
+}
+
+/* Inline code subtle pulse */
+.markdown-preview code:not(pre code) {
+  transition: background 0.2s ease, box-shadow 0.3s ease;
+}
+
+.markdown-preview code:not(pre code):hover {
+  box-shadow: 0 0 8px rgba(var(--primary), 0.15);
+}
+
+/* Images fade in and scale on hover */
+.markdown-preview img {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s ease;
+}
+
+.markdown-preview img:hover {
+  transform: scale(1.01);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+/* Custom blocks animate in */
+.custom-block {
+  animation: blockSlideIn 0.4s ease-out;
+}
+
+@keyframes blockSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Code block language label glow */
+.code-block-container {
+  transition: border-color 0.3s ease, box-shadow 0.4s ease;
+}
+
+.code-block-container:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.08);
+}
+
+.dark .code-block-container:hover {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.12);
+}
+
+/* Math equations glow */
+.katex-display {
+  transition: transform 0.3s ease;
+}
+
+.katex-display:hover {
+  transform: scale(1.02);
+}
+
+/* Smooth list item stagger animation */
+.markdown-preview li {
+  animation: listItemFade 0.3s ease-out backwards;
+}
+
+.markdown-preview li:nth-child(1) { animation-delay: 0.02s; }
+.markdown-preview li:nth-child(2) { animation-delay: 0.04s; }
+.markdown-preview li:nth-child(3) { animation-delay: 0.06s; }
+.markdown-preview li:nth-child(4) { animation-delay: 0.08s; }
+.markdown-preview li:nth-child(5) { animation-delay: 0.10s; }
+
+@keyframes listItemFade {
+  from { opacity: 0.5; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Task list checkbox animation */
+.markdown-preview input[type="checkbox"] {
+  transition: transform 0.2s ease;
+}
+
+.markdown-preview input[type="checkbox"]:hover {
+  transform: scale(1.2);
+}
+
+/* HR divider glow */
+.markdown-preview hr {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.markdown-preview hr:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 10px var(--glow-primary);
+}
